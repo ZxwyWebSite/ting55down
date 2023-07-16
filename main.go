@@ -18,22 +18,22 @@ import (
 )
 
 // 程序版本号
-const version string = `dev`
+const version string = `v1.2`
 
 // 初始化常量 (抓取参数)
 const (
 	rooturl   string = `https://m.ting55.com/book/`  // PC版播放器有样式不好搞，故从手机版页面抓取
-	listdom   string = `div.plist a.f`               // 取href
+	listdom   string = `div.plist a.f`               // 取href 注：'.f' 为免费章节
 	playdom   string = `section.h-play audio#player` // 取src
 	coverdom  string = `div.bimg img`                // 取src
 	useragent string = `Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36 Edg/114.0.1823.79`
-	title     string = `div.binfo h1`               // 书名
-	tag       string = `div.binfo p:nth-child(2)`   // 类型
-	author    string = `div.binfo p:nth-child(3)`   // 作者
-	voice     string = `div.binfo p:nth-child(4) a` // 播音
-	update    string = `div.binfo p:nth-child(5)`   // 时间
-	status    string = `div.binfo p:nth-child(6)`   // 状态
-	intro     string = `div.intro p`                // 简介
+	title     string = `div.binfo h1`             // 书名
+	tag       string = `div.binfo p:nth-child(2)` // 类型
+	author    string = `div.binfo p:nth-child(3)` // 作者
+	voice     string = `div.binfo p:nth-child(4)` // 播音
+	update    string = `div.binfo p:nth-child(5)` // 时间
+	status    string = `div.binfo p:nth-child(6)` // 状态
+	intro     string = `div.intro p`              // 简介
 )
 
 // 初始化变量 (传入参数)
@@ -46,8 +46,8 @@ var (
 
 // 读取参数
 func init() {
-	flag.StringVar(&bookid, `id`, ``, `bookid`)
-	flag.BoolVar(&showversion, `v`, false, `showversion`)
+	flag.StringVar(&bookid, `id`, ``, `要下载的小说id`)
+	flag.BoolVar(&showversion, `v`, false, `查看程序版本号`)
 	flag.Parse()
 	mainpage = rooturl + bookid
 	runpath, _ = os.Getwd()
@@ -103,7 +103,7 @@ func explore(osc chan os.Signal) {
 	listnum := doc.Find(listdom).Length()
 	bookname := doc.Find(title).Text()
 	line := `==============================`
-	bookinfo := fmt.Sprintf("书名：%v\n%v\n%v\n播音：%v\n%v\n%v\n集数：%v\n%v\n简介：%v\n%v\n地址：%v\n封面：%v\n工具：%v\n",
+	bookinfo := fmt.Sprintf("书名：%v\n%v\n%v\n%v\n%v\n%v\n集数：%v\n%v\n简介：%v\n%v\n地址：%v\n封面：%v\n工具：%v\n",
 		bookname,
 		doc.Find(tag).Text(),
 		doc.Find(author).Text(),
@@ -122,13 +122,32 @@ func explore(osc chan os.Signal) {
 		if e1 != nil {
 			log.Fatal(e1)
 		}
-		fmt.Println(`创建下载目录 ` + downpath)
+		//fmt.Println(`创建下载目录 ` + downpath)
+		fmt.Printf("创建下载目录 '%v'\n", downpath)
 	}
 	p1, _ := os.ReadDir(downpath)
 	filelist := make(map[string]any)
 	for _, f1 := range p1 {
 		filelist[f1.Name()] = struct{}{}
 	}
+	// 预计下载时间
+	da, db, dh := 50, 10, 60
+	dc, dd := listnum/da, listnum%da
+	de, df := dc*(3600+da*db), dd*db
+	dg := de + df
+	var usetime string
+	if dg > dh {
+		di, dj := dg/dh, dg%dh
+		if di > dh {
+			dk, dl := di/dh, di%dh
+			usetime = fmt.Sprintf("%v 时 %v 分", dk, dl)
+		} else {
+			usetime = fmt.Sprintf("%v 分 %v 秒", di, dj)
+		}
+	} else {
+		usetime = fmt.Sprintf("%v 秒", dg)
+	}
+	fmt.Printf("预计下载时间 %v\n\n", usetime)
 	// 下载文件
 	savefile := func(data []byte, name string) {
 		err := os.WriteFile(downpath+`/`+name, data, os.ModePerm)
@@ -136,27 +155,31 @@ func explore(osc chan os.Signal) {
 			log.Fatal(err)
 		}
 	}
-	savefile([]byte(bookinfo), `bookinfo.txt`)
-	download := func(url, name string) {
-		if _, y := filelist[name]; !y {
-			resp := require(url)
-			defer resp.Body.Close()
-			data, err := io.ReadAll(resp.Body)
-			if err != nil {
-				//log.Fatal(err)
-				log.Println(err)
-			}
-			//os.WriteFile(downpath+`/`+name, data, os.ModePerm)
-			savefile(data, name)
-		} else {
-			log.Println(`跳过文件 ` + name)
-		}
+	d1 := `bookinfo.txt`
+	if _, y1 := filelist[d1]; !y1 {
+		savefile([]byte(bookinfo), d1)
 	}
-	download(coverurl, `Cover.jpg`)
+	download := func(url, name string) {
+		resp := require(url)
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			//log.Fatal(err)
+			log.Println(err)
+		}
+		//os.WriteFile(downpath+`/`+name, data, os.ModePerm)
+		savefile(data, name)
+	}
+	d2 := `Cover.jpg`
+	if _, y2 := filelist[d2]; !y2 {
+		download(coverurl, d2)
+	}
 	isexist := func(num string) bool {
-		if _, y := filelist[num+`.m4a`]; !y {
+		file := num + `.m4a`
+		if _, y := filelist[file]; !y {
 			return true
 		} else {
+			fmt.Println(`跳过文件 ` + file)
 			return false
 		}
 	}
@@ -167,7 +190,7 @@ func explore(osc chan os.Signal) {
 		Title  string `json:"title"`
 		Url    string `json:"url"`
 	}
-	postlink := func(page string) (string, int) {
+	postlink := func(page string) (string, int, string) {
 		pageurl := mainpage + fmt.Sprintf("-%v", page)
 		doc := query(require(pageurl))
 		xt, _ := doc.Find(`meta[name='_c']`).Attr(`content`)
@@ -185,11 +208,11 @@ func explore(osc chan os.Signal) {
 		body, _ := io.ReadAll(resp.Body)
 		var conf glink
 		json.Unmarshal(body, &conf)
-		return conf.Ourl, conf.Status
+		return conf.Ourl, conf.Status, conf.Url
 	}
 	for i := 0; i < listnum; i++ {
 		num := fmt.Sprint(i + 1)
-		fmt.Printf("开始下载第 %v 章\n", num)
+		log.Printf("开始下载第 %v 章\n", num)
 		var audiourl string
 		var trynum int
 		if isexist(num) {
@@ -197,21 +220,27 @@ func explore(osc chan os.Signal) {
 				time.Sleep(time.Second * 10)
 				trynum++
 				var status int
-				audiourl, status = postlink(num)
+				var url2 string
+				audiourl, status, url2 = postlink(num)
 				if audiourl != `` {
+					break
+				} else if url2 != `` {
+					audiourl = url2
 					break
 				} else {
 					fmt.Printf("第 %v 次获取失败\n", trynum)
 					if status == -2 {
-						fmt.Println(`访问过快！等待10分钟后继续运行`)
-						time.Sleep(time.Minute * 10)
+						fmt.Println(`访问过快！等待1小时后再试`)
+						time.Sleep(time.Minute * 65)
 					}
+					// if status == -1 {
+					// 	fmt.Println(`暂不支持下载付费章节`)
+					// 	osc <- syscall.SIGTERM
+					// }
 				}
 			}
 			fmt.Println(`成功获取音频URL ` + audiourl)
 			download(audiourl, fmt.Sprintf("%v.m4a", num))
-		} else {
-			fmt.Printf("跳过 %v.m4a\n", num)
 		}
 	}
 	// 退出程序
