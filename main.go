@@ -18,7 +18,7 @@ import (
 )
 
 // 程序版本号
-const version string = `v1.2`
+const version string = `v1.3`
 
 // 初始化常量 (抓取参数)
 const (
@@ -41,16 +41,18 @@ var (
 	bookid      string //`12526`
 	mainpage    string // 主页，同Referer
 	showversion bool
-	runpath     string
+	downrpath   string
+	//runpath     string
 )
 
 // 读取参数
 func init() {
+	runpath, _ := os.Getwd()
 	flag.StringVar(&bookid, `id`, ``, `要下载的小说id`)
 	flag.BoolVar(&showversion, `v`, false, `查看程序版本号`)
+	flag.StringVar(&downrpath, `dp`, runpath+`/book`, `指定小说下载目录`)
 	flag.Parse()
 	mainpage = rooturl + bookid
-	runpath, _ = os.Getwd()
 }
 
 // 主程序
@@ -115,7 +117,8 @@ func explore(osc chan os.Signal) {
 	)
 	fmt.Println(bookinfo)
 	// 创建下载目录
-	downpath := runpath + `/book/` + bookname
+	downpath := downrpath + `/` + bookname
+	//downpath := runpath + `/book/` + bookname
 	_, e0 := os.Stat(downpath)
 	if e0 != nil {
 		e1 := os.MkdirAll(downpath, os.ModePerm)
@@ -159,23 +162,25 @@ func explore(osc chan os.Signal) {
 	if _, y1 := filelist[d1]; !y1 {
 		savefile([]byte(bookinfo), d1)
 	}
-	download := func(url, name string) {
+	download := func(url, name string) bool {
 		resp := require(url)
 		defer resp.Body.Close()
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
 			//log.Fatal(err)
 			log.Println(err)
+			return false
 		}
 		//os.WriteFile(downpath+`/`+name, data, os.ModePerm)
 		savefile(data, name)
+		return true
 	}
 	d2 := `Cover.jpg`
 	if _, y2 := filelist[d2]; !y2 {
 		download(coverurl, d2)
 	}
 	isexist := func(num string) bool {
-		file := num + `.m4a`
+		file := num + `.mp3`
 		if _, y := filelist[file]; !y {
 			return true
 		} else {
@@ -214,7 +219,7 @@ func explore(osc chan os.Signal) {
 		num := fmt.Sprint(i + 1)
 		log.Printf("开始下载第 %v 章\n", num)
 		var audiourl string
-		var trynum int
+		var trynum, downum int
 		if isexist(num) {
 			for {
 				time.Sleep(time.Second * 10)
@@ -240,7 +245,21 @@ func explore(osc chan os.Signal) {
 				}
 			}
 			fmt.Println(`成功获取音频URL ` + audiourl)
-			download(audiourl, fmt.Sprintf("%v.m4a", num))
+			fname := fmt.Sprintf("%v.mp3", num)
+			for {
+				downum++
+				if download(audiourl, fname) {
+					break
+				} else {
+					fmt.Printf("第 %v 次下载失败\n", downum)
+					if downum > 4 {
+						fmt.Println(`失败次数过多，跳过章节，可在下载完成后再次运行重试`)
+						os.Remove(downpath + `/` + fname)
+						break
+					}
+					time.Sleep(time.Second * 3)
+				}
+			}
 		}
 	}
 	// 退出程序
