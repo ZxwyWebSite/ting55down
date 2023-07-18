@@ -18,7 +18,7 @@ import (
 )
 
 // 程序版本号
-const version string = `v1.3`
+const version string = `v1.4`
 
 // 初始化常量 (抓取参数)
 const (
@@ -77,12 +77,24 @@ func require(url string) *http.Response {
 	req, _ := http.NewRequest(`GET`, url, nil)
 	req.Header.Set(`User-Agent`, useragent)
 	req.Header.Add(`Referer`, mainpage)
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatal(err)
+	var reqnum int
+	for {
+		reqnum++
+		resp, err := client.Do(req)
+		if err != nil {
+			//log.Fatal(err)
+			fmt.Println(err)
+			fmt.Printf("第 %v 次请求失败\n", reqnum)
+			if reqnum > 4 {
+				fmt.Println(`失败次数过多，请检查网络问题`)
+				os.Exit(0)
+			}
+			time.Sleep(time.Second * 3)
+		} else {
+			//defer resp.Body.Close()
+			return resp
+		}
 	}
-	//defer resp.Body.Close()
-	return resp
 }
 
 // 分析内容
@@ -105,6 +117,14 @@ func explore(osc chan os.Signal) {
 	listnum := doc.Find(listdom).Length()
 	bookname := doc.Find(title).Text()
 	line := `==============================`
+	var bookintro string
+	doc.Find(intro).Each(func(i int, s *goquery.Selection) {
+		if i > 0 {
+			bookintro += fmt.Sprintf("\n%v", s.Text())
+		} else {
+			bookintro += s.Text()
+		}
+	})
 	bookinfo := fmt.Sprintf("书名：%v\n%v\n%v\n%v\n%v\n%v\n集数：%v\n%v\n简介：%v\n%v\n地址：%v\n封面：%v\n工具：%v\n",
 		bookname,
 		doc.Find(tag).Text(),
@@ -112,7 +132,7 @@ func explore(osc chan os.Signal) {
 		doc.Find(voice).Text(),
 		doc.Find(update).Text(),
 		doc.Find(status).Text(),
-		listnum, line, doc.Find(intro).Text(), line,
+		listnum, line, bookintro, line,
 		mainpage, coverurl, `https://github.com/ZxwyWebSite/ting55down`,
 	)
 	fmt.Println(bookinfo)
@@ -134,9 +154,12 @@ func explore(osc chan os.Signal) {
 		filelist[f1.Name()] = struct{}{}
 	}
 	// 预计下载时间
-	da, db, dh := 50, 10, 60
+	const da, db, dh, dm int = 50, 10, 60, 3780
 	dc, dd := listnum/da, listnum%da
-	de, df := dc*(3600+da*db), dd*db
+	de, df := dc*(dm+da*db), dd*db
+	if dd == 0 && dc > 0 {
+		de -= dm
+	}
 	dg := de + df
 	var usetime string
 	if dg > dh {
@@ -147,6 +170,7 @@ func explore(osc chan os.Signal) {
 		} else {
 			usetime = fmt.Sprintf("%v 分 %v 秒", di, dj)
 		}
+		usetime += fmt.Sprintf(" (%v 秒)", dg)
 	} else {
 		usetime = fmt.Sprintf("%v 秒", dg)
 	}
@@ -168,7 +192,7 @@ func explore(osc chan os.Signal) {
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
 			//log.Fatal(err)
-			log.Println(err)
+			fmt.Println(err)
 			return false
 		}
 		//os.WriteFile(downpath+`/`+name, data, os.ModePerm)
@@ -207,7 +231,7 @@ func explore(osc chan os.Signal) {
 		req.Header.Add(`Content-Type`, `application/x-www-form-urlencoded; charset=UTF-8`)
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Println(err)
+			fmt.Println(err)
 		}
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
@@ -215,10 +239,12 @@ func explore(osc chan os.Signal) {
 		json.Unmarshal(body, &conf)
 		return conf.Ourl, conf.Status, conf.Url
 	}
+	startime := time.Now()
 	for i := 0; i < listnum; i++ {
 		num := fmt.Sprint(i + 1)
 		log.Printf("开始下载第 %v 章\n", num)
 		var audiourl string
+		//var audioext string
 		var trynum, downum int
 		if isexist(num) {
 			for {
@@ -228,15 +254,17 @@ func explore(osc chan os.Signal) {
 				var url2 string
 				audiourl, status, url2 = postlink(num)
 				if audiourl != `` {
+					//audioext = `.m4a`
 					break
 				} else if url2 != `` {
+					//audioext = `.mp3`
 					audiourl = url2
 					break
 				} else {
 					fmt.Printf("第 %v 次获取失败\n", trynum)
 					if status == -2 {
 						fmt.Println(`访问过快！等待1小时后再试`)
-						time.Sleep(time.Minute * 65)
+						time.Sleep(time.Minute * 63)
 					}
 					// if status == -1 {
 					// 	fmt.Println(`暂不支持下载付费章节`)
@@ -246,6 +274,7 @@ func explore(osc chan os.Signal) {
 			}
 			fmt.Println(`成功获取音频URL ` + audiourl)
 			fname := fmt.Sprintf("%v.mp3", num)
+			//fname := num + audioext
 			for {
 				downum++
 				if download(audiourl, fname) {
@@ -254,7 +283,7 @@ func explore(osc chan os.Signal) {
 					fmt.Printf("第 %v 次下载失败\n", downum)
 					if downum > 4 {
 						fmt.Println(`失败次数过多，跳过章节，可在下载完成后再次运行重试`)
-						os.Remove(downpath + `/` + fname)
+						//os.Remove(downpath + `/` + fname)
 						break
 					}
 					time.Sleep(time.Second * 3)
@@ -263,6 +292,7 @@ func explore(osc chan os.Signal) {
 		}
 	}
 	// 退出程序
-	fmt.Println(`恭喜，全部章节下载完成~`)
+	//fmt.Println(`恭喜，全部章节下载完成~`)
+	fmt.Printf("恭喜！全部章节下载完成~ 耗时%v\n", time.Since(startime))
 	osc <- syscall.SIGTERM
 }
